@@ -4,12 +4,14 @@ import { Setting } from 'obsidian';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
 import { McpSettingsManager } from '../../../features/settings/ui/McpSettingsManager';
+import { ResolvedEnvViewer } from '../../../features/settings/ui/ResolvedEnvViewer';
 import { t } from '../../../i18n/i18n';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { getClaudeWorkspaceServices } from '../app/ClaudeWorkspaceServices';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import { AgentSettings } from './AgentSettings';
+import { ClaudeSettingsViewer } from './ClaudeSettingsViewer';
 import { PluginSettingsManager } from './PluginSettingsManager';
 import { SlashCommandSettings } from './SlashCommandSettings';
 
@@ -288,6 +290,38 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       placeholder: 'ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com\nANTHROPIC_MODEL=custom-model\nCLAUDE_CODE_USE_BEDROCK=1',
       renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, 'claude'),
     });
+
+    // Vault-level environment variables
+    const settings = context.plugin.settings as unknown as Record<string, unknown>;
+    new Setting(container)
+      .setName('Vault Environment')
+      .setDesc('Project-specific environment variables that override user-level settings (KEY=VALUE format, one per line)');
+    const vaultEnvTextarea = container.createEl('textarea', {
+      attr: {
+        placeholder: 'VAULT_SPECIFIC_VAR=value\nPROJECT_PATH=/path/to/project',
+        rows: '4',
+      },
+      cls: 'claudian-settings-env-textarea',
+    });
+    vaultEnvTextarea.value = (settings.vaultEnvironmentVariables as string) ?? '';
+    vaultEnvTextarea.addEventListener('blur', async () => {
+      (context.plugin.settings as unknown as Record<string, unknown>).vaultEnvironmentVariables = vaultEnvTextarea.value;
+      await context.plugin.saveSettings();
+    });
+
+    // Resolved environment viewer
+    const resolvedContainer = container.createDiv({ cls: 'claudian-resolved-env-container' });
+    const resolvedViewer = new ResolvedEnvViewer(resolvedContainer, {
+      container: resolvedContainer,
+      plugin: context.plugin,
+      providerId: 'claude',
+    });
+    resolvedViewer.render();
+
+    // Claude settings viewer (.claude/settings.json)
+    const claudeSettingsContainer = container.createDiv({ cls: 'claudian-resolved-env-container' });
+    const claudeViewer = new ClaudeSettingsViewer(claudeSettingsContainer, context.plugin);
+    claudeViewer.render();
 
     // --- Experimental ---
 

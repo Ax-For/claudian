@@ -185,13 +185,13 @@ export class QueryOptionsBuilder {
     const mcpMentions = ctx.mcpMentions || new Set<string>();
     const uiEnabledServers = ctx.enabledMcpServers || new Set<string>();
     const combinedMentions = new Set([...mcpMentions, ...uiEnabledServers]);
-    const mcpServers = ctx.mcpManager.getActiveServers(combinedMentions);
+    const mcpServers = ctx.mcpManager.getActiveServers(combinedMentions, uiEnabledServers);
 
     if (Object.keys(mcpServers).length > 0) {
       options.mcpServers = mcpServers;
     }
 
-    const disallowedMcpTools = ctx.mcpManager.getDisallowedMcpTools(combinedMentions);
+    const disallowedMcpTools = ctx.mcpManager.getDisallowedMcpTools(combinedMentions, uiEnabledServers);
     options.disallowedTools = [
       ...disallowedMcpTools,
       ...UNSUPPORTED_SDK_TOOLS,

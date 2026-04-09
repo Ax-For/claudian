@@ -209,6 +209,18 @@ export function setProviderEnvironmentVariables(
   delete settings.environmentVariables;
 }
 
+export function getVaultEnvironmentVariables(settings: Record<string, unknown>): string {
+  const vaultEnv = (settings as Record<string, string | undefined>).vaultEnvironmentVariables;
+  return typeof vaultEnv === 'string' ? vaultEnv : '';
+}
+
+export function setVaultEnvironmentVariables(
+  settings: Record<string, unknown>,
+  envText: string,
+): void {
+  (settings as Record<string, unknown>).vaultEnvironmentVariables = envText;
+}
+
 export function joinEnvironmentTexts(...parts: Array<string | undefined>): string {
   const filtered = parts.filter((part): part is string => typeof part === 'string' && part.length > 0);
   if (filtered.length === 0) {
@@ -231,6 +243,7 @@ export function getRuntimeEnvironmentText(
   return joinEnvironmentTexts(
     getSharedEnvironmentVariables(settings),
     getProviderEnvironmentVariables(settings, providerId),
+    getVaultEnvironmentVariables(settings),
   );
 }
 
@@ -361,4 +374,73 @@ export function getEnvironmentScopeUpdates(
   }
 
   return [];
+}
+
+/** Resolved environment variable with source tracking. */
+export interface ResolvedEnvVar {
+  key: string;
+  userValue: string;
+  vaultValue: string;
+  value: string;
+}
+
+/**
+ * Parses environment text into a key-value map, handling comments, export prefix, and quotes.
+ */
+function parseEnvMap(text: string): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const normalized = trimmed.startsWith('export ') ? trimmed.slice(7) : trimmed;
+    const eqIndex = normalized.indexOf('=');
+    if (eqIndex > 0) {
+      const key = normalized.substring(0, eqIndex).trim();
+      let value = normalized.substring(eqIndex + 1).trim();
+      if ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      if (key) map.set(key, value);
+    }
+  }
+  return map;
+}
+
+/**
+ * Returns all resolved environment variables with their sources.
+ * Vault-level values override user-level for the same key.
+ * User-level = shared + provider-specific combined.
+ */
+export function getResolvedEnvironmentVariables(
+  settings: Record<string, unknown>,
+  providerId: ProviderId,
+): ResolvedEnvVar[] {
+  const sharedMap = parseEnvMap(getSharedEnvironmentVariables(settings));
+  const providerMap = parseEnvMap(getProviderEnvironmentVariables(settings, providerId));
+  const vaultMap = parseEnvMap(getVaultEnvironmentVariables(settings));
+
+  // Build user-level map (shared + provider merged, provider wins)
+  const userMap = new Map<string, string>();
+  for (const [k, v] of sharedMap) userMap.set(k, v);
+  for (const [k, v] of providerMap) userMap.set(k, v);
+
+  const allKeys = new Set([
+    ...userMap.keys(),
+    ...vaultMap.keys(),
+  ]);
+
+  const result: ResolvedEnvVar[] = [];
+
+  for (const key of allKeys) {
+    const userValue = userMap.get(key) ?? '';
+    const vaultValue = vaultMap.get(key) ?? '';
+
+    // Final value: vault overrides user
+    const value = vaultValue || userValue;
+    result.push({ key, userValue, vaultValue, value });
+  }
+
+  result.sort((a, b) => a.key.localeCompare(b.key));
+  return result;
 }

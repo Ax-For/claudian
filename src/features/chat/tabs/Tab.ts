@@ -433,6 +433,8 @@ function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
  */
 function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
   const messagesWrapperEl = contentEl.createDiv({ cls: 'claudian-messages-wrapper' });
+  const sessionIdDisplayEl = messagesWrapperEl.createDiv({ cls: 'claudian-session-id-bar' });
+  sessionIdDisplayEl.style.display = 'none';
   const messagesEl = messagesWrapperEl.createDiv({ cls: 'claudian-messages' });
   const welcomeEl = messagesEl.createDiv({ cls: 'claudian-welcome' });
   const statusPanelContainerEl = contentEl.createDiv({ cls: 'claudian-status-panel-container' });
@@ -460,6 +462,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     inputWrapper,
     inputEl,
     navRowEl,
+    sessionIdDisplayEl,
     contextRowEl,
     selectionIndicatorEl: null,
     browserIndicatorEl: null,
@@ -1252,8 +1255,14 @@ export function initializeTabControllers(
         applyProviderUIGating(tab, plugin);
         syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
       },
-      onConversationLoaded: () => ui.slashCommandDropdown?.resetSdkSkillsCache(),
-      onConversationSwitched: () => ui.slashCommandDropdown?.resetSdkSkillsCache(),
+      onConversationLoaded: () => {
+        ui.slashCommandDropdown?.resetSdkSkillsCache();
+        updateSessionIdDisplay(tab, plugin);
+      },
+      onConversationSwitched: () => {
+        ui.slashCommandDropdown?.resetSdkSkillsCache();
+        updateSessionIdDisplay(tab, plugin);
+      },
     }
   );
 
@@ -1299,6 +1308,7 @@ export function initializeTabControllers(
 
         await initializeTabService(tab, plugin);
         setupServiceCallbacks(tab, plugin);
+        updateSessionIdDisplay(tab, plugin);
 
         // Transition: lock model selector to bound provider
         refreshTabProviderUI(tab, plugin);
@@ -1565,6 +1575,8 @@ export function getTabTitle(tab: TabData, plugin: ClaudianPlugin): string {
 
 /** Shared between Tab.ts and TabManager.ts to avoid duplication. */
 export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): void {
+  updateSessionIdDisplay(tab, plugin);
+
   if (tab.service && tab.controllers.inputController) {
     tab.service.setApprovalCallback(
       async (toolName, input, description, options) =>
@@ -1674,4 +1686,49 @@ export function updatePlanModeUI(tab: TabData, plugin: ClaudianPlugin, mode: str
     'claudian-input-plan-mode',
     mode === 'plan' && getTabCapabilities(tab, plugin).supportsPlanMode,
   );
+}
+
+/**
+ * Updates the session ID display element with the current runtime's session ID.
+ * Shows a bar at the top of the messages area with click-to-copy.
+ */
+export function updateSessionIdDisplay(tab: TabData, plugin?: ClaudianPlugin): void {
+  const el = tab.dom.sessionIdDisplayEl;
+  if (!el) return;
+
+  let sessionId: string | null = null;
+
+  // Try runtime first
+  sessionId = tab.service?.getSessionId?.() ?? null;
+
+  // Fall back to conversation's stored sessionId
+  if (!sessionId && tab.conversationId && plugin) {
+    const conv = plugin.getConversationSync(tab.conversationId);
+    sessionId = conv?.sessionId ?? null;
+  }
+
+  if (!sessionId) {
+    el.style.display = 'none';
+    el.empty();
+    return;
+  }
+
+  el.style.display = '';
+  el.empty();
+
+  const shortId = sessionId.length > 24 ? sessionId.slice(0, 24) + '...' : sessionId;
+
+  el.createSpan({ cls: 'claudian-session-id-icon', text: 'Session: ' });
+  const labelEl = el.createSpan({ cls: 'claudian-session-id-label', text: shortId });
+  labelEl.setAttribute('title', `Session: ${sessionId}\nClick to copy`);
+
+  el.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      labelEl.setText('copied!');
+      setTimeout(() => labelEl.setText(shortId), 1500);
+    } catch {
+      // Clipboard API may fail in non-secure contexts
+    }
+  };
 }

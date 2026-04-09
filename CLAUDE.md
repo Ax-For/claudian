@@ -12,6 +12,10 @@ Claudian is an Obsidian plugin that embeds provider-backed chat runtimes in a si
 - Claude adaptor: `src/providers/claude/` owns the Claude runtime, prompt encoding, stream transforms, history hydration, CLI resolution, plugin and agent discovery, MCP storage, and Claude-specific settings UI. `ClaudeCommandCatalog` merges vault commands, vault skills, and runtime-supported commands behind the shared command catalog contract.
 - Codex adaptor: `src/providers/codex/` owns the `codex app-server` runtime, JSON-RPC transport, prompt encoding, JSONL history reload, session tailing, settings reconciliation, normalization, skill cataloging, subagent storage, and Codex settings UI. `CodexSkillCatalog` provides `$` skill discovery from `.codex/skills/` and `.agents/skills/` without relying on runtime command discovery.
 - Conversations: `Conversation` carries `providerId` and opaque `providerState`. Claude state is typed behind `ClaudeProviderState`. Codex state is typed behind `CodexProviderState` and currently stores `threadId`, `sessionFilePath`, and optional fork metadata.
+- Session ID bar: displayed at the top of the messages area (above `.claudian-messages`), shows the current session ID with click-to-copy. Sources from `Conversation.sessionId` on load and `ChatRuntime.getSessionId()` after send.
+- Message timestamps: rendered on every message (user and assistant) below content, with relative formatting (today/yesterday/date).
+- MCP selective loading: when the user explicitly selects servers via the UI selector, only those servers (plus @-mentions) are passed to the SDK, reducing context consumption.
+- Environment variable viewer: Claude settings tab shows resolved env vars from Claudian (shared/provider/vault levels) and `.claude/settings.json` (user vs vault levels), with final values matching what the SDK actually receives.
 
 ## Commands
 
@@ -78,3 +82,15 @@ Tests mirror the `src/` layout under `tests/unit/` and `tests/integration/`.
 - Run `npm run typecheck && npm run lint && npm run test && npm run build` after editing.
 - No `console.*` in production code.
 - Put non-committed notes, handoff files, and throwaway scripts in `.context/`.
+
+## Deploy Script
+
+```bash
+npm run deploy                              # Build + deploy to vaults with Claudian + reload
+npm run deploy -- --skip-build              # Skip build, just copy existing files
+npm run deploy -- --no-reload               # Don't reload vaults after deploy
+npm run deploy -- --force                   # Install Claudian to ALL vaults (creates dirs if needed)
+npm run deploy -- --force --skip-build      # Force install without rebuilding
+```
+
+The script automatically discovers all vaults via `obsidian vaults verbose` and deploys to each one that has Claudian installed (or all vaults with `--force`).

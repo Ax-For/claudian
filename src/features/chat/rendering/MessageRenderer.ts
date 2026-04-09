@@ -122,9 +122,16 @@ export class MessageRenderer {
         void this.renderContent(textEl, textToShow);
         this.addUserCopyButton(msgEl, textToShow);
       }
+      if (msg.timestamp) {
+        this.renderMessageTimestamp(contentEl, msg.timestamp);
+      }
       if (this.rewindCallback || this.forkCallback) {
         this.liveMessageEls.set(msg.id, msgEl);
       }
+    } else if (msg.role === 'assistant' && msg.timestamp) {
+      // Streaming assistant message may have a timestamp from history rebuild
+      // (added later via updateLiveUserMessage or during replay)
+      // Timestamp will be added by renderStoredMessage during initial display
     }
 
     this.scrollToBottom();
@@ -250,6 +257,9 @@ export class MessageRenderer {
         void this.renderContent(textEl, textToShow);
         this.addUserCopyButton(msgEl, textToShow);
       }
+      if (msg.timestamp) {
+        this.renderMessageTimestamp(contentEl, msg.timestamp);
+      }
       if (msg.userMessageId && this.isRewindEligible(allMessages, index)) {
         if (this.rewindCallback) {
           this.addRewindButton(msgEl, msg.id);
@@ -363,6 +373,11 @@ export class MessageRenderer {
         text: `* ${flavorWord} for ${formatDurationMmSs(msg.durationSeconds)}`,
         cls: 'claudian-baked-duration',
       });
+    }
+
+    // Render timestamp at the end of every assistant message
+    if (msg.timestamp) {
+      this.renderMessageTimestamp(contentEl, msg.timestamp);
     }
   }
 
@@ -778,6 +793,30 @@ export class MessageRenderer {
   // ============================================
   // Utilities
   // ============================================
+
+  private formatTimestamp(timestamp: number): string {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+
+    if (isToday) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) {
+      return `Yesterday ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  private renderMessageTimestamp(contentEl: HTMLElement, timestamp: number): void {
+    const timestampEl = contentEl.createDiv({ cls: 'claudian-message-timestamp' });
+    timestampEl.setText(this.formatTimestamp(timestamp));
+    timestampEl.setAttribute('title', new Date(timestamp).toLocaleString());
+  }
 
   /** Scrolls messages container to bottom. */
   scrollToBottom(): void {

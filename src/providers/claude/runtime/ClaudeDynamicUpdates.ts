@@ -115,7 +115,7 @@ export async function applyClaudeDynamicUpdates(
   const mcpMentions = queryOptions?.mcpMentions || new Set<string>();
   const uiEnabledServers = queryOptions?.enabledMcpServers || new Set<string>();
   const combinedMentions = new Set([...mcpMentions, ...uiEnabledServers]);
-  const mcpServers = deps.mcpManager.getActiveServers(combinedMentions);
+  const mcpServers = deps.mcpManager.getActiveServers(combinedMentions, uiEnabledServers);
   const mcpServersKey = JSON.stringify(mcpServers);
 
   if (deps.getCurrentConfig() && mcpServersKey !== deps.getCurrentConfig()!.mcpServersKey) {

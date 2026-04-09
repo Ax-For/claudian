@@ -157,6 +157,9 @@ export interface TabDOMElements {
   /** Nav row for tab badges and header icons (above input wrapper). */
   navRowEl: HTMLElement;
 
+  /** Session ID display in the nav row (click to copy). */
+  sessionIdDisplayEl: HTMLElement | null;
+
   /** Context row for file chips and selection indicator (inside input wrapper). */
   contextRowEl: HTMLElement;
 

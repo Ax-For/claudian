@@ -33,11 +33,32 @@ export class McpServerManager {
    * - It is enabled AND
    * - Either context-saving is disabled OR the server is @-mentioned
    *
+   * When `uiEnabledServers` is provided and non-empty, only servers in the
+   * explicit selection set (plus @-mentions) are loaded — disabled servers
+   * and unselected enabled servers are excluded. This enables per-turn
+   * selective loading to reduce context consumption.
+   *
    * @param mentionedNames Set of server names that were @-mentioned in the prompt
+   * @param uiEnabledServers Optional set of server names explicitly selected in the UI
    */
-  getActiveServers(mentionedNames: Set<string>): Record<string, McpServerConfig> {
+  getActiveServers(
+    mentionedNames: Set<string>,
+    uiEnabledServers?: Set<string>,
+  ): Record<string, McpServerConfig> {
     const result: Record<string, McpServerConfig> = {};
 
+    // Selective loading mode: only explicitly selected + mentioned servers
+    if (uiEnabledServers && uiEnabledServers.size > 0) {
+      const explicitSet = new Set([...mentionedNames, ...uiEnabledServers]);
+      for (const server of this.servers) {
+        if (server.enabled && explicitSet.has(server.name)) {
+          result[server.name] = server.config;
+        }
+      }
+      return result;
+    }
+
+    // Fallback: original context-saving behavior
     for (const server of this.servers) {
       if (!server.enabled) continue;
 
@@ -58,8 +79,17 @@ export class McpServerManager {
    * Only returns disabled tools from servers that would be active (same filter as getActiveServers).
    *
    * @param mentionedNames Set of server names that were @-mentioned in the prompt
+   * @param uiEnabledServers Optional set of server names explicitly selected in the UI
    */
-  getDisallowedMcpTools(mentionedNames: Set<string>): string[] {
+  getDisallowedMcpTools(
+    mentionedNames: Set<string>,
+    uiEnabledServers?: Set<string>,
+  ): string[] {
+    if (uiEnabledServers && uiEnabledServers.size > 0) {
+      const explicitSet = new Set([...mentionedNames, ...uiEnabledServers]);
+      return this.collectDisallowedTools((s) => explicitSet.has(s.name));
+    }
+
     return this.collectDisallowedTools(
       (s) => !s.contextSaving || mentionedNames.has(s.name)
     );

@@ -695,10 +695,10 @@ describe('McpServerSelector', () => {
     expect(selector.getEnabledServers().size).toBe(0);
   });
 
-  it('should hide container when no servers configured', () => {
+  it('should show container when no servers configured', () => {
     selector.setMcpManager(createMockMcpManager([]));
     const container = parentEl.querySelector('.claudian-mcp-selector');
-    expect(container?.style.display).toBe('none');
+    expect(container?.style.display).toBe('');
   });
 
   it('should show container when servers are configured', () => {
@@ -716,7 +716,7 @@ describe('McpServerSelector', () => {
   it('should show no servers message when no servers configured', () => {
     selector.setMcpManager(createMockMcpManager([]));
     const empty = parentEl.querySelector('.claudian-mcp-selector-empty');
-    expect(empty?.textContent).toBe('No MCP servers configured');
+    expect(empty?.textContent).toBe('No MCP servers configured — add them in Settings → MCP');
   });
 
   it('should add mentioned servers', () => {

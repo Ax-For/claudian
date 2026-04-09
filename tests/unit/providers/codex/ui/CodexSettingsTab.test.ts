@@ -205,6 +205,7 @@ function createElement(): any {
     createSpan: jest.fn(() => createElement()),
     setText: jest.fn(),
     empty: jest.fn(),
+    addEventListener: jest.fn(),
   };
 
   return element;

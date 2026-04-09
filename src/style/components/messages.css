@@ -260,3 +260,19 @@
   font-size: 11px;
   white-space: nowrap;
 }
+
+/* Message timestamp */
+.claudian-message-timestamp {
+  color: var(--text-faint);
+  font-size: 11px;
+  margin-top: 6px;
+  cursor: default;
+}
+
+.claudian-message-user .claudian-message-timestamp {
+  text-align: right;
+}
+
+.claudian-message-assistant .claudian-message-timestamp {
+  text-align: left;
+}

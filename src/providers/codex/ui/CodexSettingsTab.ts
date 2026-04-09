@@ -3,6 +3,7 @@ import { Setting } from 'obsidian';
 
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
+import { ResolvedEnvViewer } from '../../../features/settings/ui/ResolvedEnvViewer';
 import { t } from '../../../i18n/i18n';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
@@ -311,6 +312,32 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
       desc: 'Codex-owned runtime variables only. Use this for OPENAI_* and CODEX_* settings. If Codex auto-detection needs help, add its install directory to shared PATH instead of this provider section.',
       placeholder: 'OPENAI_API_KEY=your-key\nOPENAI_BASE_URL=https://api.openai.com/v1\nOPENAI_MODEL=gpt-5.4\nCODEX_SANDBOX=workspace-write',
       renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, 'codex'),
+    });
+
+    // Vault-level environment variables
+    const settings = context.plugin.settings as unknown as Record<string, unknown>;
+    new Setting(container)
+      .setName('Vault Environment')
+      .setDesc('Project-specific environment variables that override user-level settings (KEY=VALUE format, one per line)');
+    const vaultEnvTextarea = container.createEl('textarea', {
+      attr: {
+        placeholder: 'VAULT_SPECIFIC_VAR=value\nPROJECT_PATH=/path/to/project',
+        rows: '4',
+      },
+      cls: 'claudian-settings-env-textarea',
+    });
+    vaultEnvTextarea.value = (settings.vaultEnvironmentVariables as string) ?? '';
+    vaultEnvTextarea.addEventListener('blur', async () => {
+      (context.plugin.settings as unknown as Record<string, unknown>).vaultEnvironmentVariables = vaultEnvTextarea.value;
+      await context.plugin.saveSettings();
+    });
+
+    // Resolved environment viewer
+    const resolvedContainer = container.createDiv({ cls: 'claudian-resolved-env-container' });
+    new ResolvedEnvViewer(resolvedContainer, {
+      container: resolvedContainer,
+      plugin: context.plugin,
+      providerId: 'codex',
     });
   },
 };

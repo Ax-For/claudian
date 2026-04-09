@@ -869,7 +869,11 @@ export class McpServerSelector {
 
     if (servers.length === 0) {
       const emptyEl = listEl.createDiv({ cls: 'claudian-mcp-selector-empty' });
-      emptyEl.setText(allServers.length === 0 ? 'No MCP servers configured' : 'All MCP servers disabled');
+      emptyEl.setText(
+        allServers.length === 0
+          ? 'No MCP servers configured — add them in Settings → MCP'
+          : 'All MCP servers disabled'
+      );
       return;
     }
 
@@ -944,8 +948,8 @@ export class McpServerSelector {
     const count = this.enabledServers.size;
     const hasServers = (this.mcpManager?.getServers().length || 0) > 0;
 
-    // Show/hide container based on whether there are servers and visibility
-    if (!hasServers || !this.visible) {
+    // Always show container when visible (even without servers)
+    if (!this.visible) {
       this.container.style.display = 'none';
       return;
     }
@@ -962,9 +966,13 @@ export class McpServerSelector {
       } else {
         this.badgeEl.removeClass('visible');
       }
-    } else {
+    } else if (hasServers) {
       this.iconEl.removeClass('active');
       this.iconEl.setAttribute('title', 'MCP servers (click to enable)');
+      this.badgeEl.removeClass('visible');
+    } else {
+      this.iconEl.removeClass('active');
+      this.iconEl.setAttribute('title', 'No MCP servers configured — click to open settings');
       this.badgeEl.removeClass('visible');
     }
   }

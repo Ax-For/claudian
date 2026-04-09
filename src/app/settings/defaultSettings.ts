@@ -21,6 +21,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   persistentExternalContextPaths: [],
 
   sharedEnvironmentVariables: '',
+  vaultEnvironmentVariables: '',
   envSnippets: [],
   customContextLimits: {},
 

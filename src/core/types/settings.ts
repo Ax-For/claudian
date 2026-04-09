@@ -105,6 +105,7 @@ export interface ClaudianSettings {
 
   // Environment
   sharedEnvironmentVariables: string;
+  vaultEnvironmentVariables: string;
   envSnippets: EnvSnippet[];
   customContextLimits: Record<string, number>;
 
