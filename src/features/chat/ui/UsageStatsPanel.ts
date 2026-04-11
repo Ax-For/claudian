@@ -3,27 +3,23 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-export interface UsageSession {
-  name: string;
+export interface CurrentUsage {
+  sessionId: string;
   models: string[];
+  isActive: boolean;
   inputTokens: number;
   outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   totalTokens: number;
   cost: number;
-  lastActive: string;
+  startTime: string;
+  endTime: string;
 }
 
-let cache: { data: UsageSession[]; ts: number } | null = null;
-const CACHE_MS = 30_000;
 let resolvedNode: string | null = null;
 let resolvedCcusage: string | null = null;
 
-/**
- * Finds node and ccusage binaries.
- * Obsidian's Electron process doesn't inherit shell PATH (nvm, etc),
- * so we must resolve full paths ourselves.
- * Returns { node, ccusage } or null if either is missing.
- */
 function findBinaries(): { node: string; ccusage: string } | null {
   if (resolvedNode && resolvedCcusage) {
     return { node: resolvedNode, ccusage: resolvedCcusage };
@@ -31,7 +27,6 @@ function findBinaries(): { node: string; ccusage: string } | null {
 
   const home = os.homedir();
 
-  // 1. Try 'which' (works if PATH is inherited)
   try {
     const node = execSync('which node 2>/dev/null', { encoding: 'utf-8', timeout: 3000 }).trim();
     const cc = execSync('which ccusage 2>/dev/null', { encoding: 'utf-8', timeout: 3000 }).trim();
@@ -41,7 +36,6 @@ function findBinaries(): { node: string; ccusage: string } | null {
     }
   } catch { /* ignore */ }
 
-  // 2. nvm — find node version dir that has both node and ccusage
   const nvmDir = process.env.NVM_DIR || path.join(home, '.nvm');
   if (fs.existsSync(nvmDir)) {
     try {
@@ -59,14 +53,13 @@ function findBinaries(): { node: string; ccusage: string } | null {
     } catch { /* ignore */ }
   }
 
-  // 3. Check for node in common paths, then find ccusage relative to it
   const nodeCandidates = [
     '/opt/homebrew/bin/node',
     '/usr/local/bin/node',
     path.join(home, '.local', 'bin', 'node'),
   ];
   const ccusageCandidates = [
-    path.join(home, '.nvm', 'versions', 'node'), // search subdirs
+    path.join(home, '.nvm', 'versions', 'node'),
     path.join(home, '.npm-global', 'bin', 'ccusage'),
     '/opt/homebrew/bin/ccusage',
     '/usr/local/bin/ccusage',
@@ -75,7 +68,6 @@ function findBinaries(): { node: string; ccusage: string } | null {
 
   for (const p of nodeCandidates) {
     if (fs.existsSync(p)) {
-      // Try to find ccusage near this node or globally
       const nodeDir = path.dirname(p);
       const nearbyCc = path.join(nodeDir, 'ccusage');
       if (fs.existsSync(nearbyCc)) {
@@ -85,16 +77,14 @@ function findBinaries(): { node: string; ccusage: string } | null {
     }
   }
 
-  // Find any node, then find ccusage relative to it
   let foundNode: string | null = null;
   for (const p of nodeCandidates) {
     if (fs.existsSync(p)) { foundNode = p; break; }
   }
 
   for (const p of ccusageCandidates) {
-    if (p.endsWith('/node')) continue; // skip the node base dir
+    if (p.endsWith('/node')) continue;
     const checkPath = p.endsWith('/ccusage') ? p : (() => {
-      // It's a base dir (nvm versions dir), search for ccusage
       try {
         const versions = fs.readdirSync(p).reverse();
         for (const ver of versions) {
@@ -113,19 +103,9 @@ function findBinaries(): { node: string; ccusage: string } | null {
   return null;
 }
 
-/**
- * Fetches usage data from ccusage blocks CLI.
- */
-export async function fetchUsage(): Promise<UsageSession[]> {
-  const now = Date.now();
-  if (cache && now - cache.ts < CACHE_MS) {
-    return cache.data;
-  }
-
+export function fetchCurrentUsage(sessionId: string): CurrentUsage | null {
   const binaries = findBinaries();
-  if (!binaries) {
-    return cache?.data ?? [];
-  }
+  if (!binaries) return null;
 
   try {
     const output = execSync(`"${binaries.node}" "${binaries.ccusage}" blocks --json`, {
@@ -135,25 +115,29 @@ export async function fetchUsage(): Promise<UsageSession[]> {
     const data = JSON.parse(output) as Record<string, unknown>;
     const blocks = (data.blocks ?? []) as Record<string, unknown>[];
 
-    const sessions: UsageSession[] = blocks
-      .filter((b) => !b.isGap)
-      .map((b) => {
-        const tc = (b.tokenCounts ?? {}) as Record<string, unknown>;
-        return {
-          name: (b.id as string) ?? 'unknown',
-          models: Array.isArray(b.models) ? (b.models as string[]) : [],
-          inputTokens: Number(tc.inputTokens ?? 0),
-          outputTokens: Number(tc.outputTokens ?? 0),
-          totalTokens: Number(b.totalTokens ?? 0),
-          cost: Number(b.costUSD ?? 0),
-          lastActive: (b.actualEndTime ?? b.startTime ?? '') as string,
-        };
-      });
+    // Find active block (or the one matching our session)
+    const activeBlock = blocks.find((b) => b.isActive === true && !b.isGap)
+      ?? blocks.filter((b) => !b.isGap).pop();
 
-    cache = { data: sessions, ts: now };
-    return sessions;
+    if (!activeBlock) return null;
+
+    const tc = (activeBlock.tokenCounts ?? {}) as Record<string, unknown>;
+
+    return {
+      sessionId,
+      isActive: (activeBlock.isActive ?? false) as boolean,
+      models: Array.isArray(activeBlock.models) ? (activeBlock.models as string[]) : [],
+      inputTokens: Number(tc.inputTokens ?? 0),
+      outputTokens: Number(tc.outputTokens ?? 0),
+      cacheCreationTokens: Number(tc.cacheCreationInputTokens ?? 0),
+      cacheReadTokens: Number(tc.cacheReadInputTokens ?? 0),
+      totalTokens: Number(activeBlock.totalTokens ?? 0),
+      cost: Number(activeBlock.costUSD ?? 0),
+      startTime: (activeBlock.startTime ?? '') as string,
+      endTime: (activeBlock.actualEndTime ?? activeBlock.endTime ?? '') as string,
+    };
   } catch {
-    return cache?.data ?? [];
+    return null;
   }
 }
 
@@ -167,6 +151,16 @@ function fmtCost(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 
+function fmtDuration(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
 function fmtDate(iso: string): string {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -174,44 +168,77 @@ function fmtDate(iso: string): string {
     d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
-export function renderUsagePanel(container: HTMLElement, sessions: UsageSession[]) {
+/**
+ * Renders a single-session usage card.
+ * Called every 5 seconds for live updates.
+ */
+export function renderUsageCard(container: HTMLElement, usage: CurrentUsage) {
   container.empty();
 
-  if (sessions.length === 0) {
-    const binaries = findBinaries();
-    container.createDiv({
-      cls: 'claudian-usage-empty',
-      text: binaries
-        ? 'No usage data available.'
-        : 'ccusage or node not found. Install with: npm i -g ccusage',
-    });
-    return;
+  // Header
+  const header = container.createDiv({ cls: 'claudian-usage-card-header' });
+  header.createDiv({
+    cls: 'claudian-usage-card-title',
+    text: 'Current Session',
+  });
+  header.createDiv({
+    cls: 'claudian-usage-card-status',
+    text: usage.isActive ? '● Active' : '○ Ended',
+  });
+
+  // Stats grid
+  const grid = container.createDiv({ cls: 'claudian-usage-card-grid' });
+
+  // Cost
+  const costCard = grid.createDiv({ cls: 'claudian-usage-stat-card claudian-usage-stat-accent' });
+  costCard.createDiv({ cls: 'claudian-usage-stat-label', text: 'Cost' });
+  costCard.createDiv({ cls: 'claudian-usage-stat-value', text: fmtCost(usage.cost) });
+
+  // Total tokens
+  const tokCard = grid.createDiv({ cls: 'claudian-usage-stat-card' });
+  tokCard.createDiv({ cls: 'claudian-usage-stat-label', text: 'Total Tokens' });
+  tokCard.createDiv({ cls: 'claudian-usage-stat-value', text: fmtTokens(usage.totalTokens) });
+
+  // Input tokens
+  const inCard = grid.createDiv({ cls: 'claudian-usage-stat-card' });
+  inCard.createDiv({ cls: 'claudian-usage-stat-label', text: '↑ Input' });
+  inCard.createDiv({ cls: 'claudian-usage-stat-value', text: fmtTokens(usage.inputTokens) });
+
+  // Output tokens
+  const outCard = grid.createDiv({ cls: 'claudian-usage-stat-card' });
+  outCard.createDiv({ cls: 'claudian-usage-stat-label', text: '↓ Output' });
+  outCard.createDiv({ cls: 'claudian-usage-stat-value', text: fmtTokens(usage.outputTokens) });
+
+  // Cache read
+  const cacheReadCard = grid.createDiv({ cls: 'claudian-usage-stat-card' });
+  cacheReadCard.createDiv({ cls: 'claudian-usage-stat-label', text: '📖 Cache Read' });
+  cacheReadCard.createDiv({ cls: 'claudian-usage-stat-value', text: fmtTokens(usage.cacheReadTokens) });
+
+  // Cache creation
+  const cacheCreateCard = grid.createDiv({ cls: 'claudian-usage-stat-card' });
+  cacheCreateCard.createDiv({ cls: 'claudian-usage-stat-label', text: '💾 Cache Write' });
+  cacheCreateCard.createDiv({ cls: 'claudian-usage-stat-value', text: fmtTokens(usage.cacheCreationTokens) });
+
+  // Footer: time + models
+  const footer = container.createDiv({ cls: 'claudian-usage-card-footer' });
+  if (usage.startTime) {
+    footer.createDiv({ cls: 'claudian-usage-card-meta', text: `Started: ${fmtDate(usage.startTime)}` });
+  }
+  if (usage.endTime) {
+    footer.createDiv({ cls: 'claudian-usage-card-meta', text: `Last active: ${fmtDate(usage.endTime)}` });
+  }
+  if (usage.models.length > 0) {
+    footer.createDiv({ cls: 'claudian-usage-card-meta', text: `Models: ${usage.models.join(', ')}` });
   }
 
-  const totalCost = sessions.reduce((s, x) => s + x.cost, 0);
-  const totalTokens = sessions.reduce((s, x) => s + x.totalTokens, 0);
+  // Store getter for live refresh
+  (container as any)._getUsage = () => usage;
+}
 
-  const summaryEl = container.createDiv({ cls: 'claudian-usage-summary' });
-  summaryEl.createDiv({ cls: 'claudian-usage-summary-item', text: `Total cost: ${fmtCost(totalCost)}` });
-  summaryEl.createDiv({ cls: 'claudian-usage-summary-item', text: `Total tokens: ${fmtTokens(totalTokens)}` });
-  summaryEl.createDiv({ cls: 'claudian-usage-summary-item', text: `Sessions: ${sessions.length}` });
-
-  const listEl = container.createDiv({ cls: 'claudian-usage-list' });
-  for (const sess of sessions) {
-    const item = listEl.createDiv({ cls: 'claudian-usage-item' });
-
-    const header = item.createDiv({ cls: 'claudian-usage-item-header' });
-    header.createDiv({ cls: 'claudian-usage-item-name', text: sess.name });
-    header.createDiv({ cls: 'claudian-usage-item-cost', text: fmtCost(sess.cost) });
-
-    const meta = item.createDiv({ cls: 'claudian-usage-item-meta' });
-    meta.createDiv({
-      cls: 'claudian-usage-item-tokens',
-      text: `↑ ${fmtTokens(sess.inputTokens)} · ↓ ${fmtTokens(sess.outputTokens)} · Σ ${fmtTokens(sess.totalTokens)}`,
-    });
-    if (sess.models.length > 0) {
-      meta.createDiv({ cls: 'claudian-usage-item-models', text: sess.models.join(', ') });
-    }
-    meta.createDiv({ cls: 'claudian-usage-item-time', text: fmtDate(sess.lastActive) });
-  }
+export function renderUsageCardError(container: HTMLElement, message: string) {
+  container.empty();
+  container.createDiv({
+    cls: 'claudian-usage-card-error',
+    text: message,
+  });
 }

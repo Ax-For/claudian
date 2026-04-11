@@ -12,7 +12,6 @@ import { getTabProviderId, onProviderAvailabilityChanged, updatePlanModeUI } fro
 import { TabBar } from './tabs/TabBar';
 import { TabManager } from './tabs/TabManager';
 import type { TabData, TabId } from './tabs/types';
-import { fetchUsage, renderUsagePanel } from './ui/UsageStatsPanel';
 import { recalculateUsageForModel } from './utils/usageInfo';
 
 export class ClaudianView extends ItemView {
@@ -531,25 +530,42 @@ export class ClaudianView extends ItemView {
 
   private async openUsageStats(): Promise<void> {
     const app = this.app;
+    const activeTab = this.tabManager?.getActiveTab();
+    const sessionId = activeTab?.service?.getSessionId?.() ?? null;
+
+    const { fetchCurrentUsage, renderUsageCard, renderUsageCardError } =
+      await import('./ui/UsageStatsPanel');
+
     class UsageModal extends Modal {
+      private refreshTimer: ReturnType<typeof setInterval> | null = null;
+
       constructor() {
         super(app);
       }
       onOpen() {
         const { contentEl } = this;
         contentEl.empty();
-        contentEl.createEl('h2', { text: 'Usage Statistics' });
-        const panel = contentEl.createDiv({ cls: 'claudian-usage-panel' });
-        fetchUsage().then((sessions) => {
-          renderUsagePanel(panel, sessions);
-        }).catch(() => {
-          panel.createDiv({
-            cls: 'claudian-usage-empty',
-            text: 'Failed to fetch usage data. Make sure ccusage is installed.',
-          });
-        });
+        contentEl.createEl('h2', { text: 'Session Usage' });
+        const card = contentEl.createDiv({ cls: 'claudian-usage-card-container' });
+
+        const refresh = () => {
+          if (!sessionId) {
+            renderUsageCardError(card, 'No active session.');
+            return;
+          }
+          const usage = fetchCurrentUsage(sessionId);
+          if (usage) {
+            renderUsageCard(card, usage);
+          } else {
+            renderUsageCardError(card, 'Failed to fetch usage data. Make sure ccusage is installed.');
+          }
+        };
+
+        refresh();
+        this.refreshTimer = setInterval(refresh, 5000);
       }
       onClose() {
+        if (this.refreshTimer) clearInterval(this.refreshTimer);
         this.contentEl.empty();
       }
     }

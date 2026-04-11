@@ -1,89 +1,84 @@
-/* Usage Stats Panel */
+/* Usage Stats Card */
 
-.claudian-usage-panel {
-  max-height: 70vh;
-  overflow-y: auto;
+.claudian-usage-card-container {
+  padding: 8px 0;
 }
 
-.claudian-usage-empty {
-  padding: 24px;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
-}
-
-.claudian-usage-summary {
-  display: flex;
-  gap: 16px;
-  padding: 12px 16px;
-  background: var(--background-secondary);
-  border-radius: 6px;
-  margin-bottom: 12px;
-}
-
-.claudian-usage-summary-item {
-  font-size: var(--font-ui-small);
-  color: var(--text-normal);
-  font-weight: var(--font-medium);
-}
-
-.claudian-usage-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.claudian-usage-item {
-  padding: 10px 12px;
-  background: var(--background-secondary);
-  border-radius: 6px;
-  transition: background 0.15s;
-}
-
-.claudian-usage-item:hover {
-  background: var(--background-modifier-hover);
-}
-
-.claudian-usage-item-header {
+.claudian-usage-card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.claudian-usage-item-name {
-  font-weight: var(--font-medium);
-  font-size: var(--font-ui-small);
+.claudian-usage-card-title {
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
   color: var(--text-normal);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 70%;
 }
 
-.claudian-usage-item-cost {
-  font-family: var(--font-monospace);
+.claudian-usage-card-status {
   font-size: var(--font-ui-small);
   color: var(--text-accent);
-  font-weight: var(--font-semibold);
+  font-family: var(--font-monospace);
 }
 
-.claudian-usage-item-meta {
+.claudian-usage-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.claudian-usage-stat-card {
+  padding: 12px;
+  background: var(--background-secondary);
+  border-radius: 8px;
+  text-align: center;
+  transition: background 0.15s;
+}
+
+.claudian-usage-stat-card:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-usage-stat-accent {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-usage-stat-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.claudian-usage-stat-value {
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+  font-family: var(--font-monospace);
+  color: var(--text-normal);
+}
+
+.claudian-usage-card-footer {
+  padding-top: 10px;
+  border-top: 1px solid var(--background-modifier-border);
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 8px 16px;
+}
+
+.claudian-usage-card-meta {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
 }
 
-.claudian-usage-item-tokens {
-  font-family: var(--font-monospace);
-}
-
-.claudian-usage-item-models {
-  color: var(--text-faint);
-}
-
-.claudian-usage-item-time {
-  margin-left: auto;
+.claudian-usage-card-error {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
 }
