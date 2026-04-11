@@ -82,3 +82,10 @@
   color: var(--text-error);
   font-size: var(--font-ui-small);
 }
+
+.claudian-usage-card-loading {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}

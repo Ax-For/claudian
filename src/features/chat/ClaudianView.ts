@@ -530,42 +530,56 @@ export class ClaudianView extends ItemView {
 
   private async openUsageStats(): Promise<void> {
     const app = this.app;
-    const activeTab = this.tabManager?.getActiveTab();
-    const sessionId = activeTab?.service?.getSessionId?.() ?? null;
-
-    const { fetchCurrentUsage, renderUsageCard, renderUsageCardError } =
+    const tabManager = this.tabManager;
+    const plugin = this.plugin;
+    const { fetchCurrentUsage, renderUsageCard, renderUsageCardLoading, renderUsageCardError } =
       await import('./ui/UsageStatsPanel');
+
+    const getSessionId = (): string | null => {
+      const activeTab = tabManager?.getActiveTab();
+      return activeTab?.service?.getSessionId?.()
+        ?? (activeTab?.conversationId
+          ? plugin.getConversationSync(activeTab.conversationId)?.sessionId ?? null
+          : null);
+    };
 
     class UsageModal extends Modal {
       private refreshTimer: ReturnType<typeof setInterval> | null = null;
+      private isClosing = false;
 
-      constructor() {
-        super(app);
+      constructor() { super(app); }
+
+      private async refresh(card: HTMLElement) {
+        if (this.isClosing) return;
+        const sessionId = getSessionId();
+        if (!sessionId) {
+          renderUsageCardError(card, 'No active session. Start a conversation first.');
+          return;
+        }
+        const usage = await fetchCurrentUsage(sessionId);
+        if (this.isClosing) return;
+        if (usage) {
+          renderUsageCard(card, usage);
+        } else {
+          renderUsageCardError(card, 'Failed to fetch usage data. Make sure ccusage is installed.');
+        }
       }
+
       onOpen() {
         const { contentEl } = this;
         contentEl.empty();
         contentEl.createEl('h2', { text: 'Session Usage' });
         const card = contentEl.createDiv({ cls: 'claudian-usage-card-container' });
 
-        const refresh = () => {
-          if (!sessionId) {
-            renderUsageCardError(card, 'No active session.');
-            return;
-          }
-          const usage = fetchCurrentUsage(sessionId);
-          if (usage) {
-            renderUsageCard(card, usage);
-          } else {
-            renderUsageCardError(card, 'Failed to fetch usage data. Make sure ccusage is installed.');
-          }
-        };
+        renderUsageCardLoading(card);
+        void this.refresh(card);
 
-        refresh();
-        this.refreshTimer = setInterval(refresh, 5000);
+        this.refreshTimer = setInterval(() => void this.refresh(card), 10_000);
       }
+
       onClose() {
-        if (this.refreshTimer) clearInterval(this.refreshTimer);
+        this.isClosing = true;
+        if (this.refreshTimer) { clearInterval(this.refreshTimer); this.refreshTimer = null; }
         this.contentEl.empty();
       }
     }
