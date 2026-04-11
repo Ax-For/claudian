@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execSync } from 'child_process';
 import { promisify } from 'util';
 import { exec } from 'child_process';
 
@@ -21,54 +20,54 @@ export interface CurrentUsage {
   endTime: string;
 }
 
-let resolvedNode: string | null = null;
-let resolvedCcusage: string | null = null;
+let binaries: { node: string; ccusage: string } | null = null;
 let lastResult: CurrentUsage | null = null;
 let lastFetch = 0;
 const CACHE_MS = 10_000;
 
-function findBinaries(): { node: string; ccusage: string } | null {
-  if (resolvedNode && resolvedCcusage) return { node: resolvedNode, ccusage: resolvedCcusage };
+/**
+ * Filesystem-only binary resolution.
+ * No exec/which calls — those are slow in Electron.
+ * Resolved once at module load time.
+ */
+function resolveBinaries(): void {
+  if (binaries) return;
 
   const home = os.homedir();
-  try {
-    const node = execSync('which node 2>/dev/null', { encoding: 'utf-8', timeout: 2000 }).trim();
-    const cc = execSync('which ccusage 2>/dev/null', { encoding: 'utf-8', timeout: 2000 }).trim();
-    if (node && cc && fs.existsSync(node) && fs.existsSync(cc)) {
-      resolvedNode = node; resolvedCcusage = cc;
-      return { node, ccusage: cc };
-    }
-  } catch { /* ignore */ }
 
+  // 1. nvm — find any version with ccusage, pair with same version's node
   const nvmDir = process.env.NVM_DIR || path.join(home, '.nvm');
   if (fs.existsSync(nvmDir)) {
     try {
       const vDir = path.join(nvmDir, 'versions', 'node');
-      const versions = fs.readdirSync(vDir).reverse();
-      for (const ver of versions) {
+      for (const ver of fs.readdirSync(vDir)) {
         const b = path.join(vDir, ver, 'bin');
         const np = path.join(b, 'node');
         const cp = path.join(b, 'ccusage');
         if (fs.existsSync(np) && fs.existsSync(cp)) {
-          resolvedNode = np; resolvedCcusage = cp;
-          return { node: np, ccusage: cp };
+          binaries = { node: np, ccusage: cp };
+          return;
         }
       }
     } catch { /* ignore */ }
   }
 
+  // 2. Common global paths
   const candidates = [
     { n: '/opt/homebrew/bin/node', c: '/opt/homebrew/bin/ccusage' },
     { n: '/usr/local/bin/node', c: '/usr/local/bin/ccusage' },
+    { n: path.join(home, '.local', 'bin', 'node'), c: path.join(home, '.local', 'bin', 'ccusage') },
   ];
   for (const { n, c } of candidates) {
     if (fs.existsSync(n) && fs.existsSync(c)) {
-      resolvedNode = n; resolvedCcusage = c;
-      return { node: n, ccusage: c };
+      binaries = { node: n, ccusage: c };
+      return;
     }
   }
-  return null;
 }
+
+// Resolve immediately at module load time
+resolveBinaries();
 
 /**
  * Fetches current session usage asynchronously.
@@ -80,13 +79,12 @@ export async function fetchCurrentUsage(sessionId: string): Promise<CurrentUsage
     return lastResult;
   }
 
-  const binaries = findBinaries();
   if (!binaries) return lastResult;
 
   try {
     const { stdout } = await execAsync(
       `"${binaries.node}" "${binaries.ccusage}" blocks --json`,
-      { encoding: 'utf-8', timeout: 8000 }
+      { encoding: 'utf-8', timeout: 10000 }
     );
     const data = JSON.parse(stdout) as Record<string, unknown>;
     const blocks = (data.blocks ?? []) as Record<string, unknown>[];

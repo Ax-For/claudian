@@ -263,7 +263,7 @@
 
 /* Message timestamp */
 .claudian-message-timestamp {
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-size: 11px;
   margin-top: 6px;
   cursor: default;
