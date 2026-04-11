@@ -1,0 +1,89 @@
+/* Usage Stats Panel */
+
+.claudian-usage-panel {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.claudian-usage-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-usage-summary {
+  display: flex;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.claudian-usage-summary-item {
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+}
+
+.claudian-usage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.claudian-usage-item {
+  padding: 10px 12px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.claudian-usage-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-usage-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.claudian-usage-item-name {
+  font-weight: var(--font-medium);
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70%;
+}
+
+.claudian-usage-item-cost {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+  color: var(--text-accent);
+  font-weight: var(--font-semibold);
+}
+
+.claudian-usage-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.claudian-usage-item-tokens {
+  font-family: var(--font-monospace);
+}
+
+.claudian-usage-item-models {
+  color: var(--text-faint);
+}
+
+.claudian-usage-item-time {
+  margin-left: auto;
+}

@@ -1,5 +1,5 @@
 import type { EventRef, WorkspaceLeaf } from 'obsidian';
-import { ItemView, Notice, Scope, setIcon } from 'obsidian';
+import { ItemView, Modal, Notice, Scope, setIcon } from 'obsidian';
 
 import { getHiddenProviderCommandSet } from '../../core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
@@ -12,6 +12,7 @@ import { getTabProviderId, onProviderAvailabilityChanged, updatePlanModeUI } fro
 import { TabBar } from './tabs/TabBar';
 import { TabManager } from './tabs/TabManager';
 import type { TabData, TabId } from './tabs/types';
+import { fetchUsage, renderUsagePanel } from './ui/UsageStatsPanel';
 import { recalculateUsageForModel } from './utils/usageInfo';
 
 export class ClaudianView extends ItemView {
@@ -288,6 +289,15 @@ export class ClaudianView extends ItemView {
       this.toggleHistoryDropdown();
     });
 
+    // Usage stats button
+    const usageBtn = this.headerActionsContent.createDiv({ cls: 'claudian-header-btn' });
+    setIcon(usageBtn, 'bar-chart-3');
+    usageBtn.setAttribute('aria-label', 'Usage statistics');
+    usageBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void this.openUsageStats();
+    });
+
     fragment.appendChild(this.headerActionsContent);
 
     // Create a wrapper div to hold the fragment (for input mode nav row)
@@ -519,6 +529,33 @@ export class ClaudianView extends ItemView {
     return tabs.find(tab => tab.conversationId === conversationId) ?? null;
   }
 
+  private async openUsageStats(): Promise<void> {
+    const app = this.app;
+    class UsageModal extends Modal {
+      constructor() {
+        super(app);
+      }
+      onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl('h2', { text: 'Usage Statistics' });
+        const panel = contentEl.createDiv({ cls: 'claudian-usage-panel' });
+        fetchUsage().then((sessions) => {
+          renderUsagePanel(panel, sessions);
+        }).catch(() => {
+          panel.createDiv({
+            cls: 'claudian-usage-empty',
+            text: 'Failed to fetch usage data. Make sure ccusage is installed.',
+          });
+        });
+      }
+      onClose() {
+        this.contentEl.empty();
+      }
+    }
+    new UsageModal().open();
+  }
+
   // ============================================
   // Event Wiring
   // ============================================
@@ -573,6 +610,24 @@ export class ClaudianView extends ItemView {
       this.plugin.app.vault.on('delete', () => markCacheDirty(true)),
       this.plugin.app.vault.on('rename', () => markCacheDirty(true)),
       this.plugin.app.vault.on('modify', () => markCacheDirty(false))
+    );
+
+    // Hot-reload: watch settings files for external changes
+    let settingsReloadDebounce: ReturnType<typeof setTimeout> | null = null;
+    const SETTINGS_PATHS = new Set([
+      '.claudian/claudian-settings.json',
+      '.claude/settings.json',
+    ]);
+    this.eventRefs.push(
+      this.plugin.app.vault.on('modify', (file) => {
+        if (!file || !SETTINGS_PATHS.has(file.path)) return;
+        if (settingsReloadDebounce) return;
+        settingsReloadDebounce = setTimeout(async () => {
+          settingsReloadDebounce = null;
+          await this.plugin.loadSettings();
+          this.refreshModelSelector();
+        }, 1000);
+      })
     );
 
     // File open event
