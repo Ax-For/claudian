@@ -561,7 +561,9 @@ export class ClaudianView extends ItemView {
         if (usage) {
           renderUsageCard(card, usage);
         } else {
-          renderUsageCardError(card, 'Failed to fetch usage data. Make sure ccusage is installed.');
+          renderUsageCardError(card,
+            'Failed to fetch usage data. Check DevTools console (Cmd+Alt+I) for details.'
+          );
         }
       }
 

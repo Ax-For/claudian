@@ -40,13 +40,15 @@ function resolveBinaries(): void {
   if (fs.existsSync(nvmDir)) {
     try {
       const vDir = path.join(nvmDir, 'versions', 'node');
-      for (const ver of fs.readdirSync(vDir)) {
-        const b = path.join(vDir, ver, 'bin');
-        const np = path.join(b, 'node');
-        const cp = path.join(b, 'ccusage');
-        if (fs.existsSync(np) && fs.existsSync(cp)) {
-          binaries = { node: np, ccusage: cp };
-          return;
+      if (fs.existsSync(vDir)) {
+        for (const ver of fs.readdirSync(vDir)) {
+          const b = path.join(vDir, ver, 'bin');
+          const np = path.join(b, 'node');
+          const cp = path.join(b, 'ccusage');
+          if (fs.existsSync(np) && fs.existsSync(cp)) {
+            binaries = { node: np, ccusage: cp };
+            return;
+          }
         }
       }
     } catch { /* ignore */ }
@@ -82,11 +84,15 @@ export async function fetchCurrentUsage(sessionId: string): Promise<CurrentUsage
   if (!binaries) return lastResult;
 
   try {
-    const { stdout } = await execAsync(
-      `"${binaries.node}" "${binaries.ccusage}" blocks --json`,
-      { encoding: 'utf-8', timeout: 10000 }
+    const { stdout, stderr } = await execAsync(
+      `"${binaries.node}" "${binaries.ccusage}" blocks --json 2>/dev/null`,
+      { encoding: 'utf-8', timeout: 10000, maxBuffer: 5 * 1024 * 1024 }
     );
-    const data = JSON.parse(stdout) as Record<string, unknown>;
+    // Extract only the JSON part (ccusage may prepend warnings)
+    const jsonStart = stdout.indexOf('{');
+    const jsonStr = jsonStart >= 0 ? stdout.slice(jsonStart) : stdout;
+    if (jsonStr.trim().length === 0) return lastResult;
+    const data = JSON.parse(jsonStr) as Record<string, unknown>;
     const blocks = (data.blocks ?? []) as Record<string, unknown>[];
 
     const activeBlock = blocks.find((b) => b.isActive === true && !b.isGap)
@@ -112,7 +118,9 @@ export async function fetchCurrentUsage(sessionId: string): Promise<CurrentUsage
     lastResult = result;
     lastFetch = now;
     return result;
-  } catch {
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[UsageStatsPanel] fetch failed:', msg, 'binaries:', binaries ? `${binaries.node} ${binaries.ccusage}` : 'null');
     return lastResult;
   }
 }
