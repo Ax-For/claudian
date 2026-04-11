@@ -15,48 +15,101 @@ export interface UsageSession {
 
 let cache: { data: UsageSession[]; ts: number } | null = null;
 const CACHE_MS = 30_000;
-let ccusagePath: string | null = null;
+let resolvedNode: string | null = null;
+let resolvedCcusage: string | null = null;
 
 /**
- * Finds the ccusage binary by searching common paths.
- * Needed because Obsidian's Electron process doesn't inherit shell PATH (nvm, etc).
+ * Finds node and ccusage binaries.
+ * Obsidian's Electron process doesn't inherit shell PATH (nvm, etc),
+ * so we must resolve full paths ourselves.
+ * Returns { node, ccusage } or null if either is missing.
  */
-function findCcusage(): string | null {
-  if (ccusagePath !== null) return ccusagePath;
+function findBinaries(): { node: string; ccusage: string } | null {
+  if (resolvedNode && resolvedCcusage) {
+    return { node: resolvedNode, ccusage: resolvedCcusage };
+  }
 
-  const candidates: string[] = [];
+  const home = os.homedir();
 
-  // 1. Try 'which ccusage' (works if PATH is inherited)
+  // 1. Try 'which' (works if PATH is inherited)
   try {
-    const resolved = execSync('which ccusage 2>/dev/null', { encoding: 'utf-8', timeout: 3000 }).trim();
-    if (resolved) { ccusagePath = resolved; return resolved; }
+    const node = execSync('which node 2>/dev/null', { encoding: 'utf-8', timeout: 3000 }).trim();
+    const cc = execSync('which ccusage 2>/dev/null', { encoding: 'utf-8', timeout: 3000 }).trim();
+    if (node && cc && fs.existsSync(node) && fs.existsSync(cc)) {
+      resolvedNode = node; resolvedCcusage = cc;
+      return { node, ccusage: cc };
+    }
   } catch { /* ignore */ }
 
-  // 2. Check nvm paths
-  const home = os.homedir();
+  // 2. nvm — find node version dir that has both node and ccusage
   const nvmDir = process.env.NVM_DIR || path.join(home, '.nvm');
   if (fs.existsSync(nvmDir)) {
     try {
-      const versions = fs.readdirSync(path.join(nvmDir, 'versions', 'node'));
-      for (const ver of versions.reverse()) {
-        const candidate = path.join(nvmDir, 'versions', 'node', ver, 'bin', 'ccusage');
-        if (fs.existsSync(candidate)) { ccusagePath = candidate; return candidate; }
+      const versionsDir = path.join(nvmDir, 'versions', 'node');
+      const versions = fs.readdirSync(versionsDir).reverse();
+      for (const ver of versions) {
+        const binDir = path.join(versionsDir, ver, 'bin');
+        const nodePath = path.join(binDir, 'node');
+        const ccPath = path.join(binDir, 'ccusage');
+        if (fs.existsSync(nodePath) && fs.existsSync(ccPath)) {
+          resolvedNode = nodePath; resolvedCcusage = ccPath;
+          return { node: nodePath, ccusage: ccPath };
+        }
       }
     } catch { /* ignore */ }
   }
 
-  // 3. Check common global npm paths
-  const npmGlobalPaths = [
+  // 3. Check for node in common paths, then find ccusage relative to it
+  const nodeCandidates = [
+    '/opt/homebrew/bin/node',
+    '/usr/local/bin/node',
+    path.join(home, '.local', 'bin', 'node'),
+  ];
+  const ccusageCandidates = [
+    path.join(home, '.nvm', 'versions', 'node'), // search subdirs
     path.join(home, '.npm-global', 'bin', 'ccusage'),
-    '/usr/local/bin/ccusage',
     '/opt/homebrew/bin/ccusage',
+    '/usr/local/bin/ccusage',
     path.join(home, '.local', 'bin', 'ccusage'),
   ];
-  for (const p of npmGlobalPaths) {
-    if (fs.existsSync(p)) { ccusagePath = p; return p; }
+
+  for (const p of nodeCandidates) {
+    if (fs.existsSync(p)) {
+      // Try to find ccusage near this node or globally
+      const nodeDir = path.dirname(p);
+      const nearbyCc = path.join(nodeDir, 'ccusage');
+      if (fs.existsSync(nearbyCc)) {
+        resolvedNode = p; resolvedCcusage = nearbyCc;
+        return { node: p, ccusage: nearbyCc };
+      }
+    }
   }
 
-  ccusagePath = null;
+  // Find any node, then find ccusage relative to it
+  let foundNode: string | null = null;
+  for (const p of nodeCandidates) {
+    if (fs.existsSync(p)) { foundNode = p; break; }
+  }
+
+  for (const p of ccusageCandidates) {
+    if (p.endsWith('/node')) continue; // skip the node base dir
+    const checkPath = p.endsWith('/ccusage') ? p : (() => {
+      // It's a base dir (nvm versions dir), search for ccusage
+      try {
+        const versions = fs.readdirSync(p).reverse();
+        for (const ver of versions) {
+          const cc = path.join(p, ver, 'bin', 'ccusage');
+          if (fs.existsSync(cc)) return cc;
+        }
+      } catch { /* ignore */ }
+      return null;
+    })();
+    if (checkPath && fs.existsSync(checkPath) && foundNode) {
+      resolvedNode = foundNode; resolvedCcusage = checkPath;
+      return { node: foundNode, ccusage: checkPath };
+    }
+  }
+
   return null;
 }
 
@@ -69,13 +122,13 @@ export async function fetchUsage(): Promise<UsageSession[]> {
     return cache.data;
   }
 
-  const binary = findCcusage();
-  if (!binary) {
+  const binaries = findBinaries();
+  if (!binaries) {
     return cache?.data ?? [];
   }
 
   try {
-    const output = execSync(`"${binary}" blocks --json`, {
+    const output = execSync(`"${binaries.node}" "${binaries.ccusage}" blocks --json`, {
       encoding: 'utf-8',
       timeout: 10_000,
     });
@@ -125,17 +178,16 @@ export function renderUsagePanel(container: HTMLElement, sessions: UsageSession[
   container.empty();
 
   if (sessions.length === 0) {
-    const ccusage = findCcusage();
+    const binaries = findBinaries();
     container.createDiv({
       cls: 'claudian-usage-empty',
-      text: ccusage
+      text: binaries
         ? 'No usage data available.'
-        : 'ccusage not found. Install it with: npm i -g ccusage',
+        : 'ccusage or node not found. Install with: npm i -g ccusage',
     });
     return;
   }
 
-  // Summary
   const totalCost = sessions.reduce((s, x) => s + x.cost, 0);
   const totalTokens = sessions.reduce((s, x) => s + x.totalTokens, 0);
 
@@ -144,7 +196,6 @@ export function renderUsagePanel(container: HTMLElement, sessions: UsageSession[
   summaryEl.createDiv({ cls: 'claudian-usage-summary-item', text: `Total tokens: ${fmtTokens(totalTokens)}` });
   summaryEl.createDiv({ cls: 'claudian-usage-summary-item', text: `Sessions: ${sessions.length}` });
 
-  // Session list
   const listEl = container.createDiv({ cls: 'claudian-usage-list' });
   for (const sess of sessions) {
     const item = listEl.createDiv({ cls: 'claudian-usage-item' });
