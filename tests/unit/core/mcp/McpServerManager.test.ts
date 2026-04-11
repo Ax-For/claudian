@@ -112,6 +112,17 @@ describe('McpServerManager', () => {
         'mcp__beta__tool_b',
       ]);
     });
+
+    it('only returns disabled tools from ui-selected servers', async () => {
+      const manager = await createManager([
+        { name: 'a', config: { command: 'a' }, enabled: true, contextSaving: true, disabledTools: ['x'] },
+        { name: 'b', config: { command: 'b' }, enabled: true, contextSaving: true, disabledTools: ['y'] },
+        { name: 'c', config: { command: 'c' }, enabled: true, contextSaving: true, disabledTools: ['z'] },
+      ]);
+
+      const result = manager.getDisallowedMcpTools(new Set(), new Set(['a', 'c']));
+      expect(result).toEqual(['mcp__a__x', 'mcp__c__z']);
+    });
   });
 
   describe('getActiveServers', () => {
@@ -188,6 +199,39 @@ describe('McpServerManager', () => {
 
       const result = manager.getActiveServers(new Set(['ctx-server']));
       expect(result).toEqual({ 'ctx-server': { command: 'ctx-cmd' } });
+    });
+
+    it('only returns ui-selected servers when uiEnabledServers is provided', async () => {
+      const manager = await createManager([
+        { name: 'a', config: { command: 'a' }, enabled: true, contextSaving: false },
+        { name: 'b', config: { command: 'b' }, enabled: true, contextSaving: true },
+        { name: 'c', config: { command: 'c' }, enabled: true, contextSaving: false },
+        { name: 'd', config: { command: 'd' }, enabled: false, contextSaving: false },
+      ]);
+
+      const result = manager.getActiveServers(new Set(), new Set(['a', 'c']));
+      expect(Object.keys(result).sort()).toEqual(['a', 'c']);
+    });
+
+    it('includes mentioned servers even when uiEnabledServers is provided', async () => {
+      const manager = await createManager([
+        { name: 'selected', config: { command: 's' }, enabled: true, contextSaving: true },
+        { name: 'mentioned', config: { command: 'm' }, enabled: true, contextSaving: true },
+        { name: 'other', config: { command: 'o' }, enabled: true, contextSaving: true },
+      ]);
+
+      const result = manager.getActiveServers(new Set(['mentioned']), new Set(['selected']));
+      expect(Object.keys(result).sort()).toEqual(['mentioned', 'selected']);
+    });
+
+    it('excludes disabled servers even when in uiEnabledServers', async () => {
+      const manager = await createManager([
+        { name: 'enabled', config: { command: 'e' }, enabled: true, contextSaving: false },
+        { name: 'disabled', config: { command: 'd' }, enabled: false, contextSaving: false },
+      ]);
+
+      const result = manager.getActiveServers(new Set(), new Set(['enabled', 'disabled']));
+      expect(Object.keys(result)).toEqual(['enabled']);
     });
   });
 
